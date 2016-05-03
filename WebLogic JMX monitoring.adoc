@@ -1,0 +1,345 @@
+= WebLogic monitoring with JMX clients
+:toc:
+:toclevels: 3
+:toc-placement: preamble
+:lb: pass:[<br> +]
+:imagesdir: images
+:icons: font
+:source-highlighter: highlightjs
+
+This article was tested with *WebLogic 11g (10.3.2)*.
+
+== WebLogic configuration checks
+
+In the *WebLogic Admin console*:
+
+* in `<your_weblogic_domain> / Configuration / General / Advanced Settings`, enable both `Compatibility MBean Server Enabled` and `Management EJB Enabled`. +
+This will enable the JMX Management Server in the WebLogic Admin console. (legacy and new JMX interface) +
+This change requires a restart.
+
+== Find the MBean Servers running in WebLogic
+
+At the launch of WebLogic Server, in the domain logs (`<your_weblogic_domain>\logs\<your_weblogic_server>.log`), search for the `<BEA-149512>` tag indicating that the Mbean servers were started.
+
+Example with `<your_weblogic_domain>\logs\<your_weblogic_server>.log`:
+[source]
+----
+####<Mar 31, 2016 11:47:47 AM CEST> <Info> <JMX> <your_weblogic_server> <your_weblogic_server> <[ACTIVE] ExecuteThread: '0' for queue: 'weblogic.kernel.Default (self-tuning)'> <<WLS Kernel>> <> <> <1459417667637> <BEA-149512> <JMX Connector Server started at service:jmx:iiop://<your_weblogic_server>:7001/jndi/weblogic.management.mbeanservers.runtime .> 
+
+####<Mar 31, 2016 11:47:47 AM CEST> <Info> <JMX> <your_weblogic_server> <your_weblogic_server> <[ACTIVE] ExecuteThread: '0' for queue: 'weblogic.kernel.Default (self-tuning)'> <<WLS Kernel>> <> <> <1459417667640> <BEA-149512> <JMX Connector Server started at service:jmx:iiop://<your_weblogic_server>:7001/jndi/weblogic.management.mbeanservers.edit .> 
+
+####<Mar 31, 2016 11:47:47 AM CEST> <Info> <JMX> <your_weblogic_server> <your_weblogic_server> <[ACTIVE] ExecuteThread: '0' for queue: 'weblogic.kernel.Default (self-tuning)'> <<WLS Kernel>> <> <> <1459417667653> <BEA-149512> <JMX Connector Server started at service:jmx:iiop://<your_weblogic_server>:7001/jndi/weblogic.management.mbeanservers.domainruntime .> 
+----
+
+This will give you the URI to use in order to access the JMX MBeans. +
+It matches the pattern: 
+[source]
+----
+service:jmx:iiop://<weblogic_server_host>:<weblogic_server_port>/<MBean_server_name>
+----
+Where *MBean_server_name* can take the following values:
+
+* `weblogic.management.mbeanservers.runtime`: for navigating the hierarchy of WebLogic Server runtime MBeans and active configuration MBeans for the current server.
+* `weblogic.management.mbeanservers.edit`: for managing the configuration of the current WebLogic Server domain.
+* `weblogic.management.mbeanservers.domainruntime`: for navigating to all runtime and configuration MBeans in the domain as well as to MBeans that provide domain-wide services (such as controlling and monitoring the life cycles of servers and message-driven EJBs and coordinating the migration of migratable services).
+
+[NOTE]
+====
+The `domainruntime` and `edit` MBean servers can only be accessed from the WebLogic *Admin Server*. +
+`runtime` one only needs an access to a *Managed Server*.
+====
+
+== Launch the JConsole
+
+[NOTE]
+====
+The *JConsole* graphical user interface is a *monitoring tool* that complies to the *Java Management Extensions* (JMX) specification.
+====
+
+It can be launched, and, in our case, connects to the *WebLogic JMX agent*, using the following commands:
+
+[source,bash]
+----
+@set JAVA_HOME=<path to your JDK installation>
+ 
+%JAVA_HOME%\bin\jconsole -J-Djava.class.path=%JAVA_HOME%\lib\jconsole.jar;%JAVA_HOME%\lib\tools.jar;<connector-path> -J-Djmx.remote.protocol.provider.pkgs=weblogic.management.remote -debug
+----
+
+The JConsole options used are:
+
+* `java.class.path=%JAVA_HOME%\lib\jconsole.jar;%JAVA_HOME%\lib\tools.jar;<weblogic-connector-path>`: As the *WebLogic JMX agent* uses a *connector* which is not included in the Java platform, you need to *add the connector classes to the classpath* of the JConsole underlying JVM. +
+A possibility is to indicate here the path of a `wlfullclient.jar`, but *that's not the only option*. +
+For more details on this point, check the section about <<WebLogic_connectors,WebLogic connectors classes for remote JMX Clients>>.
+* `-J-Djmx.remote.protocol.provider.pkgs=weblogic.management.remote`: identifies the package implementing WebLogic's client side connectors code. By example, the 't3' or 'iiop' client connectors.
+* `-debug`: useful when a connection failure occurs, as the corresponding stack trace is displayed on the console.
+
+Once launched, select `Remote Process`, and fill out the target WebLogic MBeanServer URI, plus the WebLogic username and password:
+
+image::JConsole_Remote_Process.png[JConsole - Remote Process,align="center"]
+
+In this example, we chose to connect to the `domainruntime` server (as we are on local, with only 1 instance running, which is of course the Admin Server) through `IIOP` protocol. +
+So the URI used is: 
+[source,bash]
+----
+service:jmx:iiop://localhost:7001/jndi/weblogic.management.mbeanservers.domainruntime
+----
+For the `t3` protocol, it would be:
+[source,bash]
+----
+service:jmx:t3://localhost:7001/jndi/weblogic.management.mbeanservers.domainruntime
+----
+
+[CAUTION]
+====
+On Unix servers, the user launching the JConsole must also be *the owner of the WebLogic Server processes* to see them appear in the JConsole.
+====
+
+== Launch VisualVM
+
+Instead of *JConsole*, you can use *VisualVM* (its successor). +
+It offers some more advanced features than JConsole, such as *profiling* (CPU and memory), which can even be extended through various plugins.
+
+Here are some (very) useful ones:
+
+* Visual MBeans: Integrates JConsole's MBeans tab functionality into VisualVM, to navigate through the JMX MBeans hierarchies.
+* JConsole plugins container: A plugin to enable using custom JConsole plugins in VisualVM. +
+Especially useful if you developed some special tabs for JConsole you need to reuse in VisualVM)
+* Visual GC: Visual Garbage Collection monitoring tool, to check the Java Memory Model and GC actions in real time.
+
+They can be installed by 2 ways:
+
+* either directly in VisualVM, through `Tools` >> `Plugins` >> `Available Plugins` tab >> `Check for Newest`
+* or by downloading them from the http://visualvm.java.net/pluginscenters.html[official Plugins Center], then `Tools` >> `Plugins` >> `Downloaded` tab >> `Add Plugins...`
++
+[NOTE]
+====
+Be sure to download the plugins versions associated with your VisualVM version. +
+For *Java 8*, the embedded VisualVM is a *1.3.6*.
+====
+
+As for the JConsole, to connect to the *WebLogic JMX agent*, it has to be launched using the following commands:
+[source,bash]
+----
+@set JAVA_HOME=<path to your JDK installation>
+ 
+%JAVA_HOME%\bin\jvisualvm --cp:a <connector-path> -J-Djmx.remote.protocol.provider.pkgs=weblogic.management.remote
+----
+Then add a new JMX connection, using the same URI as for JConsole. +
+By example:
+[source,bash]
+----
+service:jmx:t3://localhost:7001/jndi/weblogic.management.mbeanservers.domainruntime
+----
+
+[NOTE]
+====
+The *VisualVM logs* are available at the following path:
+
+* for Linux: `<userdir>/.visualvm/<version>/var/log/messages.log`
+* for Windows: `C:\Users\<username>\AppData\Roaming\.visualvm\<version>\var\log\messages.log`
+====
+
+[[WebLogic_connectors]]
+== WebLogic connectors classes and associated jars for remote JMX Clients
+
+*This section is optional* regarding the main goal of this article: monitoring WebLogic using remote JMX client (like JConsole or VisualVM). +
+Nevertheless, understanding the available features of the different WebLogic jars, *containing the connector classes*, can ease your way when *developing your own stand-alone JMX WebLogic client*. +
+Brace yourself, depending on your constraints, *this can be tricky*...
+
+=== Server-side applications
+
+As the name implies, the server-side operations require a *complete WebLogic Server installation*. +
+
+You are in this case when, in addition to JMX monitoring, you need the following operations:
+
+* administrative operations such as *deployment*
+* operations necessary for *development purposes*, such as `ejbc` or `appc`.footnote:[for appc and ejbc compilers, look at this https://docs.oracle.com/cd/E28280_01/web.1111/e13719/appc_ejbc.htm#EJBPG1088[Oracle Help Center page].]
+* *WLST* and client-side JSR 88 applications that invoke server-side operations.footnote:[WLST: https://docs.oracle.com/cd/E29542_01/web.1111/e13715/using_wlst.htm#WLSTG118[WebLogic Scripting Tool], a command-line scripting environment that you can use to create, manage, and monitor WebLogic domains.]
+
+A client needing those lasts requires the `weblogic.jar`, which is part of the WebLogic Server installation.
+
+It also means that, *if directly on the WebLogic server*, we could launch the JConsole with the following connector path:
+[source,bash]
+----
+java.class.path=%JAVA_HOME%\lib\jconsole.jar;%JAVA_HOME%\lib\tools.jar;%WL_HOME%\server\lib\weblogic.jar // <1>
+----
+<1> `WL_HOME`: WebLogic home, something like `[...]\wlserver_10.3`
+
+To use the `t3` protocol to connect to the `domainruntime` server, your URI must match the pattern:
+[source,bash]
+----
+service:jmx:t3://<mbean_server_host>:<mbean_server_port>/jndi/weblogic.management.mbeanservers.domainruntime
+----
+
+=== Client-side applications
+
+All the jars listed discussed below have in common that they do *not* need any other WebLogic libraries / dependencies to work on the *client*. +
+You just have to add them, and *only them*, to your client classpath.
+
+==== wlfullclient.jar
+
+From WebLogic Server 11g (10.3.x), *client applications* requiring to provide WebLogic Server-specific features, in addition to JMX monitoring, need the `wlfullclient.jar`. +
+You *can't* use the former `weblogic.jar`.
+
+Contrary to its name, this jar *doesn't really allow all that is possible server-side*. +
+Here are its features and limitations:
+
+* features
+** supports `t3` and `t3s` WebLogic protocols for RMI (respectively RMI over HTTP, and RMI over HTTPS for HTTP tunneling over SSL). +
+Those protocols are faster and more scalable that IIOP.
+** supports most WebLogic Server-specific features.
+** supports WebLogic Server clustering.
+** supports most JEE features.
+** Supports WebLogic JMS, JMS SAF clients, and JMS C clients.
+* limitations
+** Web Services not supported, you need to add `wseeclient.jar`
+** operations necessary for *development purposes*, such as `ejbc` or `appc`, not supported. Those last are *server-side only*, and require `weblogic.jar`
+
+To use this jar to connect to JConsole, indicate its path as connector path.
+[source,bash]
+----
+java.class.path=%JAVA_HOME%\lib\jconsole.jar;%JAVA_HOME%\lib\tools.jar;<your_weblogic_path_to>\wlfullclient.jar
+----
+To use the `t3` protocol to connect to the `domainruntime` server, your URI must match the pattern:
+[source,bash]
+----
+service:jmx:t3://<mbean_server_host>:<mbean_server_port>/jndi/weblogic.management.mbeanservers.domainruntime
+----
+This jar is *around 55 Mo* for WLS 11g 10.3.x.
+
+[NOTE]
+====
+The  `wlfullclient.jar` is not natively present on WebLogic Server, and must be generated the following way:
+
+* `cd %WL_HOME%\server\lib`
+* `java -jar wljarbuilder.jar` +
+This will create the `wlfullclient.jar` in the `server/lib` directory.
+====
+
+==== wljmxclient.jar and wlclient.jar
+
+Those jars represent the smallest alternative in size to `wlfullclient.jar`. There are respectively *~50 Ko* and *~500 Ko* for WLS 11g 10.3.x.
+
+The downside is that it is a `RMI-IIOP` only based solution, whose performance is lower that `t3`. +
+As a consequence, clients design around a *massive use of multithreading* should *avoid this solution*.
+
+Other limitations are:
+
+* JMS support not included, you must add the `wljmsclient.jar`
+* SAF support not included, you must add the `wlsafclient.jar` footnote:[SAF: *Store-And-Forward* service for JMS. For more details, look at this https://docs.oracle.com/cd/E13222_01/wls/docs90/saf_admin/overview.html[Oracle Help Center page].]
+
+Those 2 jars can be found in `%WL_HOME%\server\bin`.
+
+To use them to connect to JConsole, indicate their paths as connector path.
+[source,bash]
+----
+java.class.path=%JAVA_HOME%\lib\jconsole.jar;%JAVA_HOME%\lib\tools.jar;<your_weblogic_path_to>\wljmxclient.jar;<your_weblogic_path_to>\wlclient.jar
+----
+Then, to connect to the `domainruntime` server, your URI must match the pattern:
+[source,bash]
+----
+service:jmx:iiop://<mbean_server_host>:<mbean_server_port>/jndi/weblogic.management.mbeanservers.domainruntime
+----
+
+[NOTE]
+====
+As explained in https://docs.oracle.com/cd/E12839_01/web.1111/e13728/accesswls.htm#JMXCU152[Oracle Help Center], `wlclient.jar` is included in `wljmxclient.jar`{empty}'s MANIFEST ClassPath entry, so `wlclient.jar` and `wljmxclient.jar` need to be in the *same directory*, or both jars need to be specified on the classpath.
+
+Ensure that `weblogic.jar` or `wlfullclient.jar` is *not included* in the classpath if `wljmxclient.jar` is included. +
+Only the thin client `wljmxclient.jar` / `wlclient.jar` or the thick client `wlfullclient.jar` should be used, but not a combination of both.
+====
+
+==== wlthint3client.jar
+
+This jar is a thin WebLogic `t3` client, that represents a *good compromise* between *size* (*~3 Mo* for WLS 11g 10.3.x) and *performance* (better than IIOP with `wljmxclient.jar` / `wlclient.jar`).
+
+* features
+** JMX support (of course), but also JMS, JMX, JNDI, and EJB resources available in WebLogic Server.
+** Transaction initiation and termination (rollback or commit) using JTA.
+** WebLogic client JMS features, including Unit-of-Order, Unit-of-Work, message compression, XML messages, JMS automatic client reconnect, and Destination Availability Helper APIs.
+** Client-side clustering allowing a client application to participate in failover and load balancing of a WebLogic Server instance.
+** JAAS authentication footnote:[JAAS: Java Authentication and Authorization Service].
+** JSSE footnote:[JSSE: Java Secure Socket Extension].
+* limitations
+** RMI over HTTPS (HTTP Tunneling over SSL) not supported.
+** JMS SAF clients, Mbean-based utilities (such as JMS Helper, JMS Module Helper), and JMS multicast are not supported.
+** JDBC resources, including WebLogic JDBC extensions are not supported.
+** Can't run a WebLogic RMI server in the client.
+** Network class loading.
+
+This jar can also be found in `%WL_HOME%\server\bin`.
+
+To use it to connect to JConsole, indicate its path as connector path.
+[source,bash]
+----
+java.class.path=%JAVA_HOME%\lib\jconsole.jar;%JAVA_HOME%\lib\tools.jar;<your_weblogic_path_to>\wlthint3client.jar
+----
+Then, to connect to the `domainruntime` server, your URI must match the pattern:
+[source,bash]
+----
+service:jmx:t3://<mbean_server_host>:<mbean_server_port>/jndi/weblogic.management.mbeanservers.domainruntime
+----
+
+=== conclusion
+
+To build your own JMX WebLogic client:
+
+* If the size is not a problem, use the `wlfullclient.jar`.
+* If you have less space available, `wlthint3client.jar` guarantees good performance for ~3 Mo (but don't forget the limitations)
+* `wlclient.jar` and `wljmxclient.jar` are to be used when the available space is very limited, as their features are limited.
+* In any case, if your client need to use WLST, appc / ejbc, or administrative operations, the WebLogic 
+
+== x) Use the WLST command line on the local desktop (Windows)
+
+. run %WL_HOME%\server\bin\setWLSEnv
++
+[source]
+----
+c:\><your WebLogic home>\server\bin\setWLSEnv.cmd
+
+CLASSPATH=...
+
+PATH=...
+
+Your environment has been set.
+----
++
+. run java `weblogic.WLST`
++
+[source,bash]
+----
+c:\>java weblogic.WLST
+
+Initializing WebLogic Scripting Tool (WLST) ...
+
+Welcome to WebLogic Server Administration Scripting Shell
+
+Type help() for help on available commands
+
+wls:/offline>
+----
+
+TO BE COMPLETED
+
+== ressources
+
+* General notions for JMX monitoring for WebLogic
+** http://middlewaresnippets.blogspot.fr/2014/10/monitoring-with-jmx.html[Monitoring with JMX]
+** https://blogs.oracle.com/theshortenspot/entry/accessing_jmx_for_oracle_weblo[Accessing JMX for Oracle WebLogic 11g]
+* Distinction between WebLogic MBean servers
+** https://blogs.oracle.com/WebLogicServer/entry/managing_weblogic_servers_with[Managing WebLogic servers with JConsole]
+* Using JConsole
+** http://docs.oracle.com/javase/7/docs/technotes/guides/management/jconsole.html[Using JConsole], especially section _"Connecting Using a JMX Service URL"_)
+* WebLogic connectors classes and associated jars
+** http://docs.oracle.com/middleware/1221/wls/SACLT/jarbuilder.htm#SACLT239[Creating a wlfullclient.jar for JDK 1.6 client applications]
+** https://thegoldenark.wordpress.com/2013/08/22/wlfullclient-jar-a-synopsis/[wlfullclient jar - A synopsis]
+** https://docs.oracle.com/cd/E12839_01/web.1111/e13717/basics.htm#SACLT128[When to Use the weblogic.jar and wlfullclient.jar Files] and https://docs.oracle.com/cd/E12839_01/web.1111/e13717/basics.htm#SACLT125[Client Types and Features] from _"Oracle Fusion Middleware Programming Stand-alone Clients for Oracle WebLogic Server"_ >> _"Overview of Stand-alone Clients"_
+** https://docs.oracle.com/cd/E12839_01/web.1111/e13728/accesswls.htm#JMXCU152[Accessing WebLogic Server MBeans with JMX] from _"Oracle Fusion Middleware Developing Custom Management Utilities With JMX for Oracle WebLogic Server"_ >> _"Remote Connections Using Only JDK Classes"_
+** http://docs.oracle.com/cd/E17904_01/web.1111/e13717/wlthint3client.htm#SACLT380[Understanding the WebLogic Thin T3 Client] from _"Oracle Fusion Middleware Developing Custom Management Utilities With JMX for Oracle WebLogic Server"_ >> _"Developing a WebLogic Thin T3 Client"_
+* Using VisualVM
+** http://visualvm.java.net/[Official VisualVM site]
+* WLST
+** http://docs.oracle.com/cd/E23943_01/web.1111/e13715/nav_edit.htm#WLSTG182: Navigating MBeans (WLST Online) - Oracle Help Center
+** http://docs.oracle.com/cd/E24329_01/web.1211/e24491/using_wlst.htm#WLSTG133: Main Steps for Using WLST in Interactive or Script Mode - Oracle Help Center
+
+
