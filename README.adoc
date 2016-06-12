@@ -1,1 +1,4 @@
-= weblogic-JMX-monitoring
+= WebLogic monitoring with JMX clients
+
+Presents how to access WebLogic MBeans through different JMX clients (JConsole, VisualVM). +
+Also contains a brief presentation of WLST (WebLogic Scripting Tools).
