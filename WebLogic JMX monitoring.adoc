@@ -293,7 +293,7 @@ To build your own JMX WebLogic client:
 
 The *WebLogic Scripting Tool* (WLST) is a *command-line scripting environment*, based on Jython and natively present on all WebLogic Server installations, that you can use to create, manage, and monitor WebLogic domains. +
 This tool would deserve a whole training, which is not the purpose here. +
-I just want to present the way it can be used to manipulate MBeans.
+I just want to present the way it can be used to *navigate through MBeans*.
 
 To launch the WLST environment:
 
@@ -324,10 +324,58 @@ Type help() for help on available commands
 
 wls:/offline>
 ----
-At this point, you are connected to WLST *offline* (equivalent to the _Configuration Wizard_). +
-To manage MBeans, you need to connect to WLST *online* (equivalent to the _WebLogic Server Administration Console_)
 
-TO BE COMPLETED (connect, ls, getMean, getPath, find)
+At this point, you are connected to WLST *offline* (equivalent to the _Configuration Wizard_). +
+To manage MBeans, you need to connect to WLST *online* (equivalent to the _WebLogic Server Administration Console_), which through:
+
+[source,bash]
+----
+wls:/(offline) > connect('username','password')
+----
+
+Once connected, you can then use the http://docs.oracle.com/cd/E23943_01/web.1111/e13813/quick_ref.htm#WLSTC113[WLST commands] (`ls`, `getMBean`, `getPath`, `find`) to navigate through the MBeans. +
+Here is an example to navigate through the runtime MBean hierarchy accessible from the server runtime management objects:
+
+[source,bash]
+----
+wls:/mydomain/serverConfig> serverRuntime()
+Location changed to serverRuntime tree. This is a read-only tree with 
+ServerRuntimeMBean as the root.
+For more help, use help('serverRuntime')
+
+wls:/mydomain/serverRuntime> ls()
+dr--   ApplicationRuntimes
+dr--   ClusterRuntime
+dr--   ConnectorServiceRuntime
+...
+dr--   JDBCServiceRuntime
+dr--   JMSRuntime
+dr--   JTARuntime
+dr--   JVMRuntime
+dr--   LibraryRuntimes
+dr--   MailSessionRuntimes
+dr--   RequestClassRuntimes
+dr--   ServerChannelRuntimes
+dr--   ServerSecurityRuntime
+dr--   ServerServices
+dr--   ThreadPoolRuntime
+dr--   WLDFAccessRuntime
+dr--   WLDFRuntime
+dr--   WTCRuntime
+dr--   WorkManagerRuntimes
+
+-r--   ActivationTime                               1093958848908
+-r--   AdminServer                                  true
+-r--   AdminServerHost
+-r--   AdminServerListenPort                        7001
+-r--   AdminServerListenPortSecure                  false
+-r--   AdministrationPort                           9002
+-r--   AdministrationPortEnabled                    false
+...
+
+wls:/mydomain/serverRuntime> cd('ApplicationRuntimes')
+wls:/mydomain/serverRuntime/ApplicationRuntimes> 
+----
 
 == Ressources
 
